@@ -4,7 +4,7 @@ torchvision
 
 # 核心依赖
 rustfs                   # 对象存储客户端（Rust 实现，fsspec 的 S3 文件系统）
-boto3                    # S3 协议客户端（RustFS 官方推荐，test/test_rustfs.py 与对象存储操作用它）
+boto3                    # S3 协议客户端（RustFS 官方推荐，rustfs/test_rustfs.py 与对象存储操作用它）
 langchain-openai         # LangChain OpenAI 集成
 langgraph                # 工作流编排框架
 grandalf                 # 图布局算法（LangGraph 依赖）
