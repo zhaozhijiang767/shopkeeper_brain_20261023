@@ -4,30 +4,17 @@
 使用 LangGraph 构建文档导入工作流
 """
 
-from pathlib import Path
 from dotenv import load_dotenv
 
 from knowledge.processor.import_process.nodes.entry import EntryNode
+from knowledge.processor.import_process.nodes.md_img import MdImgNode
 from knowledge.processor.import_process.nodes.pdf_to_md import PdfToMdNode
 
 # 加载环境变量
 load_dotenv()
 from langgraph.graph import StateGraph, END
 
-from knowledge.processor.import_process.base import setup_logging
 from knowledge.processor.import_process.state import ImportGraphState, create_default_state
-# from knowledge.processor.import_process.nodes import (
-#     EntryNode,
-#     PdfToMdNode,
-#     MdImgNode,
-#     DocumentSplitNode,
-#     ItemNameRecognitionNode,
-#     BgeEmbeddingNode,
-#     ImportMilvusNode,
-#     KnowledgeGraphNode,
-# )
-
-
 
 
 def route_after_entry(state: ImportGraphState) -> str:
@@ -89,7 +76,7 @@ def create_import_graph() -> StateGraph:
     nodes = {
         "entry": EntryNode(),
         "pdf_to_md": PdfToMdNode(),
-        "md_img": "MdImgNode()",
+        "md_img": MdImgNode(),
         "document_split": "DocumentSplitNode()",
         "item_name_recognition": "ItemNameRecognitionNode()",
         "bge_embedding": "BgeEmbeddingNode()",

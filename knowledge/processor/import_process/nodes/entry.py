@@ -1,4 +1,8 @@
-"""入口节点"""
+"""
+入口节点
+
+检测文件类型并设置处理标志
+"""
 import json
 from pathlib import Path
 
