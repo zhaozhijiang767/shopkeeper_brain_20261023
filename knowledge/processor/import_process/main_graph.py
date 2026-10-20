@@ -6,7 +6,13 @@
 
 from dotenv import load_dotenv
 
+from knowledge.processor.import_process.base import setup_logging
+from knowledge.processor.import_process.nodes.bge_embedding import BgeEmbeddingNode
+from knowledge.processor.import_process.nodes.document_split import DocumentSplitNode
 from knowledge.processor.import_process.nodes.entry import EntryNode
+from knowledge.processor.import_process.nodes.import_milvus import ImportMilvusNode
+from knowledge.processor.import_process.nodes.item_name_recognition import ItemNameRecognitionNode
+from knowledge.processor.import_process.nodes.knowledge_graph import KnowledgeGraphNode
 from knowledge.processor.import_process.nodes.md_img import MdImgNode
 from knowledge.processor.import_process.nodes.pdf_to_md import PdfToMdNode
 
@@ -77,11 +83,11 @@ def create_import_graph() -> StateGraph:
         "entry": EntryNode(),
         "pdf_to_md": PdfToMdNode(),
         "md_img": MdImgNode(),
-        "document_split": "DocumentSplitNode()",
-        "item_name_recognition": "ItemNameRecognitionNode()",
-        "bge_embedding": "BgeEmbeddingNode()",
-        "import_milvus": "ImportMilvusNode()",
-        "knowledge_graph": "KnowledgeGraphNode()",
+        "document_split": DocumentSplitNode(),
+        "item_name_recognition": ItemNameRecognitionNode(),
+        "bge_embedding": BgeEmbeddingNode(),
+        "import_milvus": ImportMilvusNode(),
+        "knowledge_graph": KnowledgeGraphNode(),
     }
 
     # 3. 添加节点到图状态的工作流中
@@ -147,3 +153,49 @@ def run_import(file_dir: str = "", import_file_path: str = "") -> dict:
 
     # 3. 返回运行后的图状态
     return final_state or initial_state
+
+# ==================== 命令行入口 ====================
+
+if __name__ == "__main__":
+    # 1. 配置日志
+    setup_logging()
+
+    print("=" * 50)
+    print("知识库导入流程测试")
+    print("=" * 50)
+
+    # 2. 准备测试文件路径
+    # 请根据实际情况修改以下路径
+    test_file_dir = r"D:\projects\shopkeeper_brain\knowledge\temp_data\input"
+    test_import_file_path = r"D:\projects\shopkeeper_brain\knowledge\temp_data\input\万用表RS-12的使用.pdf"
+
+    # 检查文件是否存在
+    from pathlib import Path
+    test_path = Path(test_import_file_path)
+    if not test_path.exists():
+        print(f"错误: 测试文件不存在: {test_import_file_path}")
+        print("请修改 test_import_file_path 为有效的 PDF 或 MD 文件路径")
+        exit(1)
+
+    print(f"输入文件: {test_path.name}")
+    print(f"文件类型: {test_path.suffix}")
+    print("-" * 50)
+
+    # 3. 运行导入流程
+    try:
+        result = run_import(test_file_dir, test_import_file_path)
+
+        print("-" * 50)
+        print("流程完成!")
+        print(f"识别商品: {result.get('item_name', 'N/A')}")
+        print(f"切片数量: {len(result.get('chunks', []))}")
+
+    except Exception as e:
+        print(f"流程执行失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # 4. 打印图结构（ASCII 可视化）
+    print("-" * 50)
+    print("图结构:")
+    kb_import_app.get_graph().print_ascii()

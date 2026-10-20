@@ -22,9 +22,9 @@ def get_llm_client(mode_name: str = None, temperature: float = 0.0, response_for
     """
 
     # 1. 获取模型的名字
-    model_name = mode_name or os.getenv('ITEM_MODEL', "agnes-3.0-flash")
-    api_key = os.getenv('OPENAI_API_KEY', "sk-puJzJ6ZHPpRc9IBgQv5plU5afNWuhaNN06MzCNH3x7udEqXQ")
-    api_base = os.getenv('OPENAI_API_BASE', "https://apihub.agnes-ai.com/v1")
+    model_name = mode_name or os.getenv('ITEM_MODEL', "")
+    api_key = os.getenv('OPENAI_API_KEY', "")
+    api_base = os.getenv('OPENAI_API_BASE', "")
 
     cache_key = (mode_name, response_format)  # 复合缓存key(a,b)
 
@@ -58,7 +58,11 @@ def get_llm_client(mode_name: str = None, temperature: float = 0.0, response_for
 
 
 if __name__ == '__main__':
-    llm_client = get_llm_client(mode_name="agnes-3.0-flash", response_format=True)
+    # 用环境变量里的模型
+    llm_client = get_llm_client(mode_name=os.getenv("ITEM_MODEL", ""), response_format=True)
+
+    if not llm_client:
+        raise SystemExit("LLM 客户端创建失败")
 
     import json
 
