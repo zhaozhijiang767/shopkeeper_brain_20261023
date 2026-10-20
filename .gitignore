@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 数据卷（etcd / milvus / mongo / rustfs 本地数据）
+knowledge/volumes/
+
+# 测试输入材料（PDF 等大文件）
+knowledge/docs/
+
+# 临时运行产物
+knowledge/temp_data/
+
+# 环境与密钥
+.env
+
+# IDE / 工具
+.idea/
+.agnes/
+.workbuddy-ai/
+
+# 操作系统
+.DS_Store
+Thumbs.db
