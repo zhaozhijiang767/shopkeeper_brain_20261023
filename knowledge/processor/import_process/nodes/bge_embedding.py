@@ -109,6 +109,7 @@ class BgeEmbeddingNode(BaseNode):
                     "part": doc.get("part", 0),
                     "file_title": doc.get("file_title"),
                     "item_name": doc.get("item_name"),
+                    "item_key": doc.get("item_key", ""),
                     "dense_vector": dense_vector,
                     "sparse_vector": sparse_vector
                 }

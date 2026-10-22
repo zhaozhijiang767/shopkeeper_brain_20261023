@@ -1,17 +1,20 @@
 # ============================================================
-# Milvus S3 对象存储配置（替代 compose 中的 MINIO_* 环境变量）
+# Milvus 对象存储配置（覆盖官方默认，挂载为 user.yaml）
 #
-# 注意：键名 minioAddress / minioAccessKeyID 等是 Milvus 内部
-#       配置系统的固定名称，不可更改（源码硬编码）。
-#       值全部指向 RustFS，与 .env 中 RUSTFS_ACCESS_KEY 一致。
+# 键名以 Milvus v2.5.5 的 minio: 段为准（源码/默认 milvus.yaml 已核对）。
+# 地址/凭据全部指向 rustfs 容器，与 compose 里 RUSTFS_ACCESS_KEY/SECRET_KEY 一致。
 # ============================================================
 
-common:
-  storage:
-    # S3 端点（Docker 内部 DNS，指向 rustfs 容器）
-    minioAddress: "rustfs:9000"
-    # 根凭据（必须与 rustfs 容器的 RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY 一致）
-    minioAccessKeyID: "rustfs"
-    minioSecretAccessKey: "rustfs"
-    # 非 AWS 环境，关闭 IAM 签名认证
-    useIAM: false
+minio:
+  # S3 端点（Docker 内部 DNS，指向 rustfs 容器）；address 与 port 分开写
+  address: rustfs
+  port: 9000
+  # 根凭据（必须与 rustfs 容器的 RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY 一致）
+  accessKeyID: rustfs
+  secretAccessKey: rustfs
+  # 非 AWS 环境，关闭 SSL 与 IAM 签名认证
+  useSSL: false
+  useIAM: false
+  # Milvus 自己的数据桶（首次启动自动创建，合法桶名，勿用下划线）
+  bucketName: milvus-bucket
+  rootPath: files

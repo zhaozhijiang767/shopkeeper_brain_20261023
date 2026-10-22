@@ -124,7 +124,7 @@ class ImportMilvusNode(BaseNode):
         """
 
         # 1. 定义 schema
-        schema = client.create_schema(enable_dynamic_fields=True)
+        schema = client.create_schema(enable_dynamic_field=True)
 
         # 2. 添加主键(自增)
         schema.add_field(
@@ -141,6 +141,8 @@ class ImportMilvusNode(BaseNode):
         schema.add_field(field_name="part", datatype=DataType.INT8)
         schema.add_field(field_name="file_title", datatype=DataType.VARCHAR, max_length=65535)
         schema.add_field(field_name="item_name", datatype=DataType.VARCHAR, max_length=65535)
+        # 匹配键：build_item_key(item_name)，下游标量过滤只比它，不比 item_name
+        schema.add_field(field_name="item_key", datatype=DataType.VARCHAR, max_length=65535)
 
         # 4. 添加向量字段
         schema.add_field(field_name="sparse_vector", datatype=DataType.SPARSE_FLOAT_VECTOR)

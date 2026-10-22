@@ -24,6 +24,7 @@ class QueryGraphState(TypedDict):
         prompt: 构造的提示词。
         answer: 最终生成的答案。
         item_names: 识别的商品名称列表。
+        item_keys: 商品名匹配键列表，与 item_names 一一对应，供下游标量过滤。
         rewritten_query: 重写后的查询。
         history: 历史对话列表。
         is_stream: 是否启用流式输出。
@@ -42,6 +43,7 @@ class QueryGraphState(TypedDict):
     prompt: str
     answer: str
     item_names: List[str]
+    item_keys: List[str]
     rewritten_query: str
     history: list
     is_stream: bool
@@ -63,6 +65,7 @@ DEFAULT_STATE: QueryGraphState = {
     "prompt": "",                   # 提示词
     "answer": "",                   # 答案
     "item_names": [],               # 商品名称
+    "item_keys": [],                # 商品名匹配键（下游标量过滤用）
     "rewritten_query": "",          # 重写查询
     "history": [],                  # 历史对话
     "is_stream": False,             # 是否流式输出

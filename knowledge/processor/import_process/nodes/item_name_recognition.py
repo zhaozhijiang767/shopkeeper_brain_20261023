@@ -5,6 +5,7 @@
 """
 import json
 import os
+import re
 from typing import List, Tuple, Optional
 from pymilvus import DataType
 
@@ -15,7 +16,13 @@ from knowledge.processor.import_process.exceptions import LLMError, ValidationEr
 
 from knowledge.tools.llm_utils import get_llm_client
 from knowledge.tools.embedding_utils import get_bge_m3_model
-from knowledge.tools.milvus_utils import get_milvus_client
+from knowledge.tools.milvus_utils import get_milvus_client, escape_expr_value
+from knowledge.tools.item_name_normalize import (
+    build_item_key,
+    clean_item_name,
+    is_same_name,
+    resolve_item_name,
+)
 from knowledge.tools.normalize_sparse_vector import normalize_sparse_vector
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -35,6 +42,8 @@ class ItemNameRecognitionNode(BaseNode):
 
     name = "item_name_recognition"
 
+    MAX_RECOGNIZE_ATTEMPTS = 2  # 商品名识别最多尝试次数
+
     def process(self, state: ImportGraphState) -> ImportGraphState:
         """执行商品名称识别"""
         config = get_config()
@@ -46,7 +55,12 @@ class ItemNameRecognitionNode(BaseNode):
         context = self._build_context(chunks, config.item_name_chunk_k)
 
         # Step 3: 调用 LLM 识别
-        item_name = self._recognize_item_name(file_title, context, config)
+        raw_name = self._recognize_item_name(file_title, context, config)
+
+        # Step 3.1: 商品名清洗与已入库商品名归并（型号一致则复用旧名字）
+        item_name = resolve_item_name(raw_name)
+        if item_name != raw_name.strip():
+            self.logger.info(f"商品名归并: {raw_name!r} -> {item_name!r}")
 
         # Step 4: 回填到 state 和 chunks
         self._backfill_item_name(state, chunks, item_name)
@@ -106,7 +120,11 @@ class ItemNameRecognitionNode(BaseNode):
         return "\n\n".join(parts)[:max_chars]
 
     def _recognize_item_name(self, file_title: str, context: str, config) -> str:
-        """调用 LLM 识别商品名称"""
+        """调用 LLM 识别商品名称。
+
+        结果无效（空、与文件名相同）时重试；多次仍无效则抛错。
+        不再用文件名兜底，避免把文档标题当成商品名入库。
+        """
         self.log_step("step_3", "调用 LLM 识别")
 
         prompt = f"""
@@ -117,39 +135,74 @@ class ItemNameRecognitionNode(BaseNode):
 {context}
 
 要求：
-1. 返回内容为字符串形式，最好是带品牌、型号和名称的完整商品名称。比如：苏伯尓5000W大功率电磁炉；
-2. 返回结果应该只包含商品名称，不要添加任何解释或其他内容；
-3. 如果无法识别商品名称,请返回空字符串。
+1. 文件名只用于确认型号，不要把文件名里的词直接拼进商品名；
+2. 商品名格式优先为「品牌 + 型号 + 品类」，没有品牌时用「型号 + 品类」；
+3. 品牌、型号、品类各出现一次，不要重复。正确示例：RS-12 数字万用表；错误示例：万用表RS-12数字万用表；
+4. 不要包含“的使用、说明书”等文档字样，不要添加解释；
+5. 如果无法识别商品名称，请返回空字符串。
 """
 
-        try:
-            llm = get_llm_client(mode_name=config.item_model, response_format=False)
-            resp = llm.invoke([
-                SystemMessage(content="你是商品识别专家，只输出字符串。"),
-                HumanMessage(content=prompt),
-            ])
+        last_raw = ""
+        last_error = None
 
-            item_name = getattr(resp, "content", "").strip()
+        for attempt in range(1, self.MAX_RECOGNIZE_ATTEMPTS + 1):
+            # 1. 调用 LLM
+            try:
+                llm = get_llm_client(mode_name=config.item_model, response_format=False)
+                resp = llm.invoke([
+                    SystemMessage(content="你是商品识别专家，只输出字符串。"),
+                    HumanMessage(content=prompt),
+                ])
+                last_raw = getattr(resp, "content", "").strip()
+            except Exception as e:
+                last_error = e
+                self.logger.error(
+                    f"商品名识别第 {attempt}/{self.MAX_RECOGNIZE_ATTEMPTS} 次调用失败: {e}"
+                )
+                continue
 
-            if not item_name:
-                self.logger.warning("LLM 未能识别商品名称，使用文件标题")
-                item_name = file_title
+            # 2. 校验结果
+            if self._is_valid_item_name(last_raw, file_title):
+                self.logger.info(f"识别结果: {last_raw}")
+                return last_raw
 
-            self.logger.info(f"识别结果: {item_name}")
-            return item_name
+            self.logger.error(
+                f"商品名识别第 {attempt}/{self.MAX_RECOGNIZE_ATTEMPTS} 次结果无效: "
+                f"{last_raw!r}（文件标题: {file_title!r}）"
+            )
 
-        except Exception as e:
-            self.logger.warning(f"LLM 调用失败: {e}，使用文件标题作为商品名称")
-            return file_title
+        # 3. 重试后仍失败：明确报错，不再用文件名兜底
+        raise LLMError(
+            f"商品名识别失败（已尝试 {self.MAX_RECOGNIZE_ATTEMPTS} 次），"
+            f"最后一次结果: {last_raw!r}，文件标题: {file_title!r}",
+            node_name=self.name,
+            cause=last_error,
+        )
+
+    @staticmethod
+    def _is_valid_item_name(item_name: str, file_title: str) -> bool:
+        """判断识别结果能否当商品名：非空、含文字、不能是文件名的复制。"""
+        cleaned = clean_item_name(item_name)
+        if not cleaned:
+            return False
+        if not re.search(r"[\u4e00-\u9fffA-Za-z]", cleaned):
+            return False
+        if is_same_name(item_name, file_title):
+            return False
+        return True
 
     def _backfill_item_name(self, state: ImportGraphState, chunks: List[dict], item_name: str):
-        """回填 item_name 到 state 和 chunks"""
+        """回填 item_name 与匹配键 item_key 到 state 和 chunks"""
         self.log_step("step_4", "回填 item_name")
 
+        item_key = build_item_key(item_name)
+
         state["item_name"] = item_name
+        state["item_key"] = item_key
 
         for chunk in chunks:
             chunk["item_name"] = item_name
+            chunk["item_key"] = item_key
 
         state["chunks"] = chunks
 
@@ -206,21 +259,35 @@ class ItemNameRecognitionNode(BaseNode):
             if not client.has_collection(collection_name=collection_name):
                 self._create_item_name_collection(client, collection_name)
 
-            # 4. 准备数据
+            # 4. 查重：同一匹配键只保留一条，避免对齐时返回重复候选
+            item_key = build_item_key(item_name)
+            exists = client.query(
+                collection_name=collection_name,
+                filter=f'item_key == "{escape_expr_value(item_key)}"',
+                output_fields=["item_name"],
+                limit=1,
+            )
+            if exists:
+                self.logger.info(f"商品名已存在，跳过写入: {item_name}")
+                state["item_name"] = item_name
+                return
+
+            # 5. 准备数据
             data = {
                 "file_title": file_title,
-                "item_name": item_name
+                "item_name": item_name,
+                "item_key": item_key,
             }
 
-            # 5. 构建稠密向量
+            # 6. 构建稠密向量
             if dense_vector is not None:
                 data["dense_vector"] = dense_vector
 
-            # 6. 构建稀疏向量
+            # 7. 构建稀疏向量
             if sparse_vector is not None:
                 data["sparse_vector"] = normalize_sparse_vector(sparse_vector)
 
-            # 7. 插入数据
+            # 8. 插入数据
             result = client.insert(collection_name=collection_name, data=[data])
             self.logger.info(f"已保存到 Milvus，ID: {result['ids'][0]}")
 
@@ -234,12 +301,14 @@ class ItemNameRecognitionNode(BaseNode):
         self.logger.info(f"创建集合: {collection_name}")
 
         # 1. 定义字段
-        schema = client.create_schema(enable_dynamic_fields=True)
+        schema = client.create_schema(enable_dynamic_field=True)
 
         schema.add_field(field_name="pk", datatype=DataType.VARCHAR,
                          is_primary=True, auto_id=True, max_length=100)
         schema.add_field(field_name="file_title", datatype=DataType.VARCHAR, max_length=65535)
         schema.add_field(field_name="item_name", datatype=DataType.VARCHAR, max_length=65535)
+        # 匹配键：与切片集合同名，确认节点把它带回给下游做标量过滤
+        schema.add_field(field_name="item_key", datatype=DataType.VARCHAR, max_length=65535)
         schema.add_field(field_name="dense_vector", datatype=DataType.FLOAT_VECTOR, dim=1024)
         schema.add_field(field_name="sparse_vector", datatype=DataType.SPARSE_FLOAT_VECTOR)
 

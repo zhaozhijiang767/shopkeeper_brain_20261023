@@ -53,7 +53,7 @@ services: # 定义需要运行的各个服务（容器）集合
       MQ_TYPE: rocksmq # 使用轻量级本地 RocksMQ（单机版标配，无需部署 Pulsar/Kafka）
     volumes: # 数据卷挂载
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus # 持久化 Milvus 本地数据（RocksMQ 消息日志等）
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/configs/milvus.yaml:/var/lib/milvus/configs/milvus.yaml # S3 对象存储（RustFS）连接配置
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/configs/milvus.yaml:/milvus/configs/user.yaml # S3 对象存储（RustFS）连接配置，user.yaml 只放覆盖项，不覆盖官方 milvus.yaml
     healthcheck: # Milvus 健康检查配置
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"] # 访问 9091 管理端口的 healthz 接口判断可用性
       interval: 30s # 检查频率 30 秒

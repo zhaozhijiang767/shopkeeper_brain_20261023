@@ -52,6 +52,8 @@ class ImportGraphState(TypedDict, total=False):
 
     item_name: str  # 识别出的商品/产品名称
 
+    item_key: str  # 商品名匹配键（build_item_key 生成，用于标量过滤，不展示）
+
     # ==================== 处理中间数据 ====================
 
     md_content: str  # Markdown 文档内容
@@ -84,6 +86,8 @@ GRAPH_DEFAULT_STATE: ImportGraphState = {
     "chunks": [],
 
     "item_name": "",
+
+    "item_key": "",
 
 }
 

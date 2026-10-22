@@ -13,6 +13,7 @@ from knowledge.processor.query_process.base import BaseNode, setup_logging
 from knowledge.processor.query_process.config import get_config
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.processor.query_process.prompt import ITEM_NAME_EXTRACT_TEMPLATE
+from knowledge.tools.item_name_normalize import build_item_key, clean_item_name
 
 
 class ItemNameConfirmNode(BaseNode):
@@ -127,7 +128,10 @@ class ItemNameConfirmNode(BaseNode):
             result = json.loads(content)
             result.setdefault("item_names", [])
             result.setdefault("rewritten_query", query)
-            result["item_names"] = [n.strip() for n in result["item_names"]]
+            # 与导入侧同一套清洗，避免全角/长横线等纯文本差异影响向量匹配
+            result["item_names"] = [
+                n for n in (clean_item_name(x) for x in result["item_names"]) if n
+            ]
             return result
 
         except Exception as e:
@@ -138,7 +142,7 @@ class ItemNameConfirmNode(BaseNode):
         """向量检索 + 评分对齐。
 
         Returns:
-            {"confirmed_item_names": [...], "options": [...]}
+            {"confirmed_item_names": [...], "confirmed_item_keys": [...], "options": [...]}
         """
         # 1. 向量检索
         query_results = self._vector_search(item_names)
@@ -186,7 +190,7 @@ class ItemNameConfirmNode(BaseNode):
         results = []
 
         # 4. 遍历每个候选商品名
-        for i, name in enumerate(item_names):
+        for i, extracted in enumerate(item_names):
             try:
                 # 4.1 构建混合检索请求
                 #      dense/sparse 的度量类型必须与集合索引一致（建库时均为 IP）
@@ -206,19 +210,35 @@ class ItemNameConfirmNode(BaseNode):
                     ranker_weights=(0.5, 0.5),
                     limit=self.MAX_OPTIONS,
                     norm_score=True,
-                    output_fields=["item_name"],
+                    output_fields=["item_name", "item_key"],
                 )
 
-                # 4.3 整理匹配结果
-                matches = [
-                    {"item_name": hit["entity"]["item_name"], "score": hit["distance"]}
-                    for hit in (search_res[0] if search_res else [])
-                ]
+                # 4.3 整理匹配结果，并按匹配键去重：
+                #     库里可能同时存在同一商品的多条历史叫法（如带空格与不带空格），
+                #     它们 key 相同，若不去重会被下游当成歧义候选。
+                seen: Dict[str, Dict[str, Any]] = {}
+                for hit in (search_res[0] if search_res else []):
+                    entity = hit.get("entity") or {}
+                    cand_name = entity.get("item_name") or ""
+                    if not cand_name:
+                        continue
+                    # 存量行可能没有 item_key，用同一函数现算，结果与回填一致
+                    key = entity.get("item_key") or build_item_key(cand_name)
+                    score = hit.get("distance", 0.0)
+                    if key not in seen or score > seen[key]["score"]:
+                        seen[key] = {
+                            "item_name": cand_name,
+                            "item_key": key,
+                            "score": score,
+                        }
 
-                results.append({"extracted_name": name, "matches": matches})
+                results.append({
+                    "extracted_name": extracted,
+                    "matches": list(seen.values()),
+                })
 
             except Exception as e:
-                self.logger.error(f"查询商品名称 {name} 失败: {e}")
+                self.logger.error(f"查询商品名称 {extracted} 失败: {e}")
 
         return results
 
@@ -227,15 +247,19 @@ class ItemNameConfirmNode(BaseNode):
 
         规则:
             - score > 0.63 且唯一 → 直接确认
-            - score > 0.63 且多条 → 优先取与提取名完全匹配的，否则取最高分
+            - score > 0.63 且多条 → 优先取匹配键与提取名相同的，否则取最高分
             - 0.6 ≤ score < 0.63 → 作为候选选项
             - score < 0.6 → 忽略
+
+        确认结果同时给出 item_name（展示、写历史）与 item_key（下游标量过滤）。
         """
         confirmed: List[str] = []
+        confirmed_keys: List[str] = []
         options: List[str] = []
 
         for res in query_results:
             extracted = (res.get("extracted_name") or "").strip()
+            extracted_key = build_item_key(extracted)
 
             # 按分数降序排序
             matches = sorted(
@@ -252,18 +276,18 @@ class ItemNameConfirmNode(BaseNode):
             mid = [m for m in matches if m["score"] >= self.MID_CONFIDENCE_THRESHOLD]
 
             if high:
-                # 高置信: 优先精确匹配，否则取最高分
-                exact = next(
-                    (m for m in high if m["item_name"].strip() == extracted),
-                    None
-                )
-                confirmed.append((exact or high[0])["item_name"])
+                # 高置信: 优先取匹配键相同的候选，否则取最高分
+                exact = next((m for m in high if m["item_key"] == extracted_key), None)
+                chosen = exact or high[0]
+                confirmed.append(chosen["item_name"])
+                confirmed_keys.append(chosen["item_key"])
             elif mid:
                 # 中置信: 作为候选选项
                 options.extend(m["item_name"] for m in mid[:self.MAX_OPTIONS])
 
         return {
             "confirmed_item_names": confirmed,
+            "confirmed_item_keys": confirmed_keys,
             "options": options[:self.MAX_OPTIONS],
         }
 
@@ -273,12 +297,14 @@ class ItemNameConfirmNode(BaseNode):
     ) -> QueryGraphState:
         """根据对齐结果更新 state。"""
         confirmed = align_result.get("confirmed_item_names", [])
+        confirmed_keys = align_result.get("confirmed_item_keys", [])
         options = align_result.get("options", [])
 
         if confirmed:
             # 确认成功：回填历史，更新状态
             self._backfill_history_item_names(history, confirmed)
             state["item_names"] = confirmed
+            state["item_keys"] = confirmed_keys
             state["rewritten_query"] = rewritten_query
 
         elif options:
