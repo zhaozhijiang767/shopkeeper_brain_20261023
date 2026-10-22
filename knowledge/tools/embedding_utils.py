@@ -78,6 +78,7 @@ def generate_hybrid_embeddings(embedding_model: BGEM3EmbeddingFunction, embeddin
             "sparse": processed_sparse_result
         }
     except Exception as e:
+        logger.error(f"生成混合向量失败: {e}")
         return None
 
 

@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 @dataclass
 class QueryConfig:

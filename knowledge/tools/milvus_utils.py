@@ -44,7 +44,7 @@ def get_milvus_client() -> Optional[MilvusClient]:
 # ------------------------------------------------------------------
 # 创建混合检索请求
 # ------------------------------------------------------------------
-def create_hybrid_search_requests(dense_vector,
+def build_hybrid_search_requests(dense_vector,
                                   sparse_vector,
                                   dense_params=None,
                                   sparse_params=None,
@@ -91,7 +91,7 @@ def create_hybrid_search_requests(dense_vector,
 # ------------------------------------------------------------------
 # 执行混合检索请求
 # ------------------------------------------------------------------
-def execute_hybrid_search_query(milvus_client: MilvusClient,
+def execute_hybrid_search(milvus_client: MilvusClient,
                                 collection_name,
                                 search_requests,
                                 ranker_weights=(0.5, 0.5),
