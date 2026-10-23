@@ -87,11 +87,15 @@ services: # 定义需要运行的各个服务（容器）集合
       
   neo4j: # 定义 Neo4j 图数据库服务，用于存储知识图谱中的实体节点和边（关系）
     image: neo4j:2026.01.3 # 指定 Neo4j 镜像
-    volumes: # 为保障图谱心血数据不丢，必须严格映射四大核心目录
-        - /root/neo4j/logs:/logs # 挂载运行日志，Cypher 语句报错或内存溢出时需查看此目录
-        - /root/neo4j/config:/config # 挂载配置目录，方便后续修改内存分配 (neo4j.conf)
-        - /root/neo4j/data:/data # 图谱数据的物理存储目录，【绝对不能丢】的重中之重
-        - /root/neo4j/plugins:/plugins # 存放额外插件包，如需图计算算法 (GDS) 或 APOC 库，把 .jar 丢进这里即可
+    # 必须挂到宿主目录：原来写的是 /root/neo4j/xxx，在 Windows Docker Desktop 下这个路径落在
+    # Linux 虚拟机内部而不是宿主盘，容器/VM 一重建图谱数据就全没了（Milvus 之所以幸存，
+    # 是因为它用的是下面的 ${DOCKER_VOLUME_DIRECTORY:-.}/volumes 写法）。
+    # 注意不挂 /config：宿主侧该目录为空，覆盖镜像自带的 neo4j.conf 会导致启动失败；
+    # 要改内存等参数请用下面的 NEO4J_dbms_* 环境变量，或把配置文件放进 volumes/neo4j/config 后再加回挂载。
+    volumes: # 为保障图谱数据不丢，必须映射到宿主持久化目录
+        - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/neo4j/logs:/logs # 运行日志，Cypher 报错或内存溢出时查这里
+        - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/neo4j/data:/data # 图谱数据的物理存储目录，【绝对不能丢】的重中之重
+        - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/neo4j/plugins:/plugins # 额外插件包（GDS / APOC 的 .jar）
     environment: # 初始环境配置
         - NEO4J_AUTH=neo4j/hzk123456 # 初始化数据库超级管理员账号（neo4j）及强制密码（hzk123456）
     ports: # 暴露图数据库端口
