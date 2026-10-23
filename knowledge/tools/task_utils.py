@@ -108,3 +108,28 @@ def get_task_status(task_id: str) -> str:
     """
     # 1. 安全获取指定任务的总体运行状态，若不存在则返回空字符串
     return _tasks_status.get(task_id, "")
+
+
+def set_task_result(task_id: str, key: str, value: str) -> None:
+    """
+    存储任务结果字段（如 answer / error）。
+    """
+    _tasks_result[task_id][key] = value
+
+
+def get_task_result(task_id: str, key: str, default: str = "") -> str:
+    """
+    获取任务结果字段（如 answer / error）。
+    """
+    return _tasks_result.get(task_id, {}).get(key, default)
+
+
+def clear_task(task_id: str):
+    # 1. 安全移除该任务的运行节点记录
+    _tasks_running_list.pop(task_id, None)
+    # 2. 安全移除该任务的已完成节点记录
+    _tasks_done_list.pop(task_id, None)
+    # 3. 安全移除该任务的总体状态记录
+    _tasks_status.pop(task_id, None)
+    # 4. 安全移除该任务的结果记录
+    # _tasks_result.pop(task_id, None)
