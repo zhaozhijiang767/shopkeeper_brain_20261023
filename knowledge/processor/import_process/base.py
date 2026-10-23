@@ -10,6 +10,7 @@ import logging
 
 from knowledge.processor.import_process.config import ImportConfig, get_config
 from knowledge.processor.import_process.exceptions import ImportProcessError
+from knowledge.tools.task_utils import add_done_task, add_running_task
 T = TypeVar("T")  # 泛型状态类型
 
 
@@ -64,10 +65,25 @@ class BaseNode(ABC):
 
         self.logger.info(f"--- {self.name} 开始 ---")
 
+        # 注册运行中任务：导入页面按 /status 轮询，这里只更新状态表不推队列，
+        # 否则 MinerU 转换、图片总结这类长节点跑几分钟页面上毫无变化
+        task_id = state.get("task_id", "") if isinstance(state, dict) else ""
+        if task_id:
+            try:
+                add_running_task(task_id, self.name)
+            except Exception as e:
+                self.logger.warning(f"任务运行中登记失败: {e}")
 
         try:
             result = self.process(state)
             self.logger.info(f"--- {self.name} 完成 ---")
+
+            if task_id:
+                try:
+                    add_done_task(task_id, self.name)
+                except Exception as e:
+                    self.logger.warning(f"任务完成登记失败: {e}")
+
             return result
         except ImportProcessError:
             # 已经是自定义异常，直接抛出

@@ -102,3 +102,32 @@ shopkeeper_brain/
 | 前端 | `front/` | 静态 HTML 页面（聊天 + 导入） |
 | 配置 | `configs/` + `.env` | 服务连接参数、API 密钥 |
 | 编排 | `docker-compose.yml` | 一键拉起 etcd / RustFS / Milvus / Attu / Neo4j / MongoDB |
+
+## 启动与访问
+
+先起依赖：`docker compose -f knowledge/docker-compose.yml up -d`（etcd / RustFS / Milvus / Attu / Neo4j / MongoDB）。
+
+两条命令分别在两个终端里跑，且**必须先 `cd knowledge`**：`.env` 在 `knowledge/` 下，各 utils 用无参 `load_dotenv()` 从当前工作目录往上找它。在仓库根启动不会报错，只会静默拿到空配置（LLM 报 `Missing credentials`、集合名为空、Mongo 连不上）。包名是 `knowledge.xxx`，所以还要把父目录给 `PYTHONPATH`。
+
+```bash
+cd knowledge
+source .venv/Scripts/activate          # 同时把 python 和 mineru.exe 放上 PATH
+
+# 导入服务 :8000
+PYTHONPATH=.. PYTHONIOENCODING=utf-8 python -m knowledge.api.import_router
+
+# 查询服务 :8001
+PYTHONPATH=.. PYTHONIOENCODING=utf-8 python -m knowledge.api.query_router
+```
+
+浏览器访问：
+
+| 页面 | URL | 说明 |
+|------|-----|------|
+| 导入页面 | http://127.0.0.1:8000/front/import.html | 拖拽上传 PDF/MD，看 8 个导入节点的运行日志 |
+| 查询页面 | http://127.0.0.1:8001/front/chat.html | 提问，看八步阶段进度与流式回答（勾选"流式输出"走 SSE） |
+
+备注：
+- `PYTHONIOENCODING=utf-8` 不带的话，日志与响应里的中文会变乱码（是终端编码问题，不是数据坏了）。
+- 导入服务若报 `[WinError 2] 系统找不到指定的文件`，说明 `mineru.exe` 不在 PATH 上，即未使用 `knowledge/.venv` 的解释器环境。
+- 上传接口 `POST /upload` 是多文件表单字段 `files`，返回 `task_ids`；SSE 队列以 `session_id` 为键。

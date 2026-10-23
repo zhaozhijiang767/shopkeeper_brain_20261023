@@ -1,6 +1,9 @@
+import asyncio
 import json
 import queue
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator
+
+from fastapi import Request
 
 
 class SSEEvent:
@@ -44,3 +47,50 @@ def push_to_session(session_id: str, event: str, data: Dict[str, Any]):
     stream_queue = get_sse_queue(session_id)
     if stream_queue:
         stream_queue.put({"event": event, "data": data})
+
+
+async def sse_generator(
+    session_id: str, request: Request
+) -> AsyncGenerator[str, None]:
+    """SSE 生成器，用于 FastAPI 的 StreamingResponse。"""
+    stream_queue = get_sse_queue(session_id)
+    if stream_queue is None:
+        return
+
+    loop = asyncio.get_running_loop()
+    try:
+        # 发送连接建立信号，告诉前端"管道已通"
+        yield _sse_pack(SSEEvent.READY, {})
+
+        while True:
+            # 检测客户端断开
+            if await request.is_disconnected():
+                break
+
+            try:
+                # 使用 run_in_executor 避免阻塞 async 事件循环
+                # block=True: 队列为空时阻塞等待; timeout=1.0: 超时抛 queue.Empty
+                msg = await loop.run_in_executor(
+                    None, stream_queue.get, True, 1.0
+                )
+            except queue.Empty:
+                continue
+
+            event = msg.get("event")
+            data = msg.get("data")
+
+            # 特殊关闭事件
+            if event == SSEEvent.CLOSE:
+                break
+
+            yield _sse_pack(event, data)
+
+    except (ConnectionResetError, BrokenPipeError):
+        # 客户端强行刷新或关闭标签页：TCP 管道破裂，静默退出
+        return
+    except asyncio.CancelledError:
+        # 协程被取消：重新抛出，让外层框架知道它被成功取消了
+        raise
+    finally:
+        # 清理资源（防止内存泄漏）
+        remove_sse_queue(session_id)

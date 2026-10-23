@@ -48,7 +48,10 @@ class ItemNameConfirmNode(BaseNode):
         item_names = extract_res.get("item_names", [])
         rewritten_query = extract_res.get("rewritten_query", query)
         # 3. 向量匹配 + 评分对齐
-        align_result = self._match_and_align(item_names) if item_names else {}
+        #    抽不出型号时（如"如何使用万用表测量电压？"）退回用整句检索，
+        #    否则库里明明有对应产品也会被直接判成"无法识别"
+        probe_names = item_names or [rewritten_query or query]
+        align_result = self._match_and_align(probe_names)
 
         # 4. 更新状态
         state = self._update_state(state, align_result, rewritten_query, history)
@@ -284,6 +287,14 @@ class ItemNameConfirmNode(BaseNode):
             elif mid:
                 # 中置信: 作为候选选项
                 options.extend(m["item_name"] for m in mid[:self.MAX_OPTIONS])
+
+        # 只有一个候选、又没有高置信命中时直接确认它：歧义只在多候选时才有意义，
+        # 而本图没有追问环节，停在"您是在询问以下产品吗"就再也走不下去
+        if not confirmed and len(set(options)) == 1:
+            only = options[0]
+            confirmed.append(only)
+            confirmed_keys.append(build_item_key(only))
+            options = []
 
         return {
             "confirmed_item_names": confirmed,

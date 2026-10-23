@@ -1,35 +1,44 @@
+from collections import defaultdict
 from typing import Dict, List
 
 from knowledge.tools.sse_utils import push_to_session
+
+# 任务状态常量
+TASK_STATUS_PENDING = "pending"       # 等待处理
+TASK_STATUS_PROCESSING = "processing"  # 处理中
+TASK_STATUS_COMPLETED = "completed"   # 已完成
+TASK_STATUS_FAILED = "failed"         # 失败
 
 # 内存态任务追踪
 _tasks_running_list: Dict[str, List[str]] = {}
 _tasks_done_list: Dict[str, List[str]] = {}
 _tasks_status: Dict[str, str] = {}
-_tasks_result: Dict[str, Dict[str, str]] = {}
+_tasks_result: Dict[str, Dict[str, str]] = defaultdict(dict)
 
-# 节点名 -> 中文名映射
+# 节点名 -> 中文名映射（键必须与节点类的 name 属性、图注册名一致）
 _NODE_NAME_TO_CN: Dict[str, str] = {
     "upload_file": "上传文件",
-    "entry": "检查文件",
-    "pdf_to_md_node": "PDF转Markdown",
-    "md_img_node": "Markdown图片处理",
-    "document_split_node": "文档切分",
-    "item_name_recognition": "主体名称识别",
-    "beg_embedding_chunks_node": "向量生成",
-    "import_milvus_node": "导入向量数据库",
-    "knowledge_graph_node": "导入知识图谱",
     "__end__": "处理完成",
 
-    # --- Query 流程节点（kb/query_process/main_graph.py）---
-    "item_name_confirm_node": "确认问题产品",
-    "answer_output_node": "生成答案",
-    "rerank_node": "重排序",
-    "rrf_node": "倒排融合",
-    "mcp_search_node": "网络搜索",
-    "vector_search_node": "切片搜索",
-    "hyde_search_node": "切片搜索(假设性文档)",
-    "kg_search_node": "查询知识图谱"
+    # --- Import 流程节点（processor/import_process/main_graph.py）---
+    "entry": "检查文件",
+    "pdf_to_md": "PDF转Markdown",
+    "md_img": "Markdown图片处理",
+    "document_split": "文档切分",
+    "item_name_recognition": "主体名称识别",
+    "bge_embedding": "向量生成",
+    "import_milvus": "导入向量数据库",
+    "knowledge_graph": "导入知识图谱",
+
+    # --- Query 流程节点（processor/query_process/main_graph.py）---
+    "item_name_confirm": "确认问题产品",
+    "search_embedding": "切片搜索",
+    "search_embedding_hyde": "切片搜索(假设性文档)",
+    "query_kg": "查询知识图谱",
+    "web_search_mcp": "网络搜索",
+    "rrf": "倒排融合",
+    "rerank": "重排序",
+    "answer_output": "生成答案"
 
 }
 
